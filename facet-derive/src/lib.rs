@@ -15,6 +15,7 @@ keyword! {
     KCrate = "crate";
     KIn = "in";
     KConst = "const";
+    KWhere = "where";
     KMut = "mut";
     KFacet = "facet";
     KSensitive = "sensitive";
@@ -36,7 +37,7 @@ unsynn! {
     /// are concerned).
     struct AngleTokenTree(Either<Cons<Lt, Vec<Cons<Except<Gt>, AngleTokenTree>>, Gt>, TokenTree>);
 
-    enum TypeDecl {
+    enum AdtDecl {
         Struct(Struct),
         Enum(Enum),
     }
@@ -85,17 +86,64 @@ unsynn! {
         _vis: Option<Vis>,
         _kw_struct: KStruct,
         name: Ident,
+        generics: Option<GenericParams>,
         kind: StructKind,
     }
 
+    struct GenericParams {
+        _lt: Lt,
+        params: CommaDelimitedVec<GenericParam>,
+        _gt: Gt,
+    }
+
+    enum GenericParam {
+        Lifetime{
+            name: Lifetime,
+            bounds: Option<Cons<Colon, VerbatimUntil<Either<Comma, Gt>>>>,
+        },
+        Const {
+            _const: KConst,
+            name: Ident,
+            _colon: Colon,
+            typ: VerbatimUntil<Either<Comma, Gt, Eq>>,
+            default: Option<Cons<Eq, VerbatimUntil<Either<Comma, Gt>>>>,
+        },
+        Type {
+            name: Ident,
+            bounds: Option<Cons<Colon, VerbatimUntil<Either<Comma, Eq, Gt>>>>,
+            default: Option<Cons<Eq, VerbatimUntil<Either<Comma, Gt>>>>,
+        },
+    }
+
+    struct WhereClauses {
+        _kw_where: KWhere,
+        clauses: CommaDelimitedVec<WhereClause>,
+    }
+
+    struct WhereClause {
+        // FIXME: This likely breaks for absolute `::` paths
+        _pred: VerbatimUntil<Colon>,
+        _colon: Colon,
+        bounds: VerbatimUntil<Either<Comma, Semicolon, BraceGroup>>,
+    }
+
     enum StructKind {
-        Struct(BraceGroupContaining<CommaDelimitedVec<StructField>>),
-        TupleStruct(Cons<ParenthesisGroupContaining<CommaDelimitedVec<TupleField>>, Semi>),
-        UnitStruct(Semi)
+        Struct {
+            clauses: Option<WhereClauses>, fields: BraceGroupContaining<CommaDelimitedVec<StructField>>
+        },
+        TupleStruct {
+            fields: ParenthesisGroupContaining<CommaDelimitedVec<TupleField>>,
+            clauses: Option<WhereClauses>,
+            semi: Semi
+        },
+        UnitStruct {
+            clauses: Option<WhereClauses>,
+            semi: Semi
+        }
     }
 
     struct Lifetime {
-        _apostrophe: Apostrophe,
+        _apostrophe: PunctJoint<'\''>,
         name: Ident,
     }
 
@@ -127,6 +175,7 @@ unsynn! {
         _pub: Option<KPub>,
         _kw_enum: KEnum,
         name: Ident,
+        generics: Option<GenericParams>,
         body: BraceGroupContaining<CommaDelimitedVec<EnumVariantLike>>,
     }
 
@@ -164,10 +213,10 @@ pub fn facet_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let mut i = input.to_token_iter();
 
     // Parse as TypeDecl
-    match i.parse::<Cons<TypeDecl, EndOfStream>>() {
+    match i.parse::<Cons<AdtDecl, EndOfStream>>() {
         Ok(it) => match it.first {
-            TypeDecl::Struct(parsed) => process_struct::process_struct(parsed),
-            TypeDecl::Enum(parsed) => process_enum::process_enum(parsed),
+            AdtDecl::Struct(parsed) => process_struct::process_struct(parsed),
+            AdtDecl::Enum(parsed) => process_enum::process_enum(parsed),
         },
         Err(err) => {
             panic!(
@@ -272,7 +321,12 @@ pub(crate) fn build_maybe_doc(attrs: &[Attribute]) -> String {
     }
 }
 
-pub(crate) fn gen_struct_field(field_name: &str, struct_name: &str, attrs: &[Attribute]) -> String {
+pub(crate) fn gen_struct_field(
+    field_name: &str,
+    struct_name: &str,
+    generics: &str,
+    attrs: &[Attribute],
+) -> String {
     // Determine field flags
     let mut flags = "facet::FieldFlags::EMPTY";
     let mut attribute_list: Vec<String> = vec![];
@@ -312,8 +366,8 @@ pub(crate) fn gen_struct_field(field_name: &str, struct_name: &str, attrs: &[Att
     format!(
         "facet::Field::builder()
     .name(\"{field_name}\")
-    .shape(facet::shape_of(&|s: {struct_name}| s.{field_name}))
-    .offset(::core::mem::offset_of!({struct_name}, {field_name}))
+    .shape(facet::shape_of(&|s: {struct_name}<{generics}>| s.{field_name}))
+    .offset(::core::mem::offset_of!({struct_name}<{generics}>, {field_name}))
     .flags({flags})
     .attributes(&[{attributes}])
     {maybe_field_doc}

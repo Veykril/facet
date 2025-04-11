@@ -93,7 +93,12 @@ pub(crate) fn process_enum(parsed: Enum) -> proc_macro::TokenStream {
                     .enumerate()
                     .map(|(idx, field)| {
                         let field_name = format!("_{idx}");
-                        gen_struct_field(&field_name, &shadow_struct_name, &field.value.attributes)
+                        gen_struct_field(
+                            &field_name,
+                            &shadow_struct_name,
+                            "",
+                            &field.value.attributes,
+                        )
                     })
                     .collect::<Vec<String>>()
                     .join(", ");
@@ -101,14 +106,14 @@ pub(crate) fn process_enum(parsed: Enum) -> proc_macro::TokenStream {
                 // Add variant expression - now with discriminant
                 variant_expressions.push(format!(
                     "{{
-                        static FIELDS: &[facet::Field] = &[
+                        let fields: &'static [facet::Field] = &const {{[
                             {fields}
-                        ];
+                        ]}};
 
                         facet::Variant::builder()
                             .name({variant_name:?})
                             .discriminant(Some({discriminant_value}))
-                            .kind(facet::VariantKind::Tuple {{ fields: FIELDS }})
+                            .kind(facet::VariantKind::Tuple {{ fields }})
                             {maybe_doc}
                             .build()
                     }}",
@@ -149,7 +154,12 @@ pub(crate) fn process_enum(parsed: Enum) -> proc_macro::TokenStream {
                     .iter()
                     .map(|field| {
                         let field_name = field.value.name.to_string();
-                        gen_struct_field(&field_name, &shadow_struct_name, &field.value.attributes)
+                        gen_struct_field(
+                            &field_name,
+                            &shadow_struct_name,
+                            "",
+                            &field.value.attributes,
+                        )
                     })
                     .collect::<Vec<String>>()
                     .join(", ");
@@ -157,14 +167,14 @@ pub(crate) fn process_enum(parsed: Enum) -> proc_macro::TokenStream {
                 // Add variant expression - now with discriminant
                 variant_expressions.push(format!(
                     "{{
-                        static FIELDS: &[facet::Field] = &[
+                        let fields: &'static [facet::Field] = &const {{[
                             {fields}
-                        ];
+                        ]}};
 
                         facet::Variant::builder()
                             .name({variant_name:?})
                             .discriminant(Some({discriminant_value}))
-                            .kind(facet::VariantKind::Struct {{ fields: FIELDS }})
+                            .kind(facet::VariantKind::Struct {{ fields }})
                             {maybe_doc}
                             .build()
                     }}",

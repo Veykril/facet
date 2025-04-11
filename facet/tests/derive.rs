@@ -289,6 +289,13 @@ fn tuple_struct_field_doc_comment() {
 }
 
 #[test]
+fn tuple_struct_generic() {
+    #[derive(Clone, Hash, PartialEq, Eq, ::facet::Facet)]
+    #[repr(transparent)]
+    struct Blah<'a, T: Facet, const C: usize = 3>(T, core::marker::PhantomData<&'a ()>);
+}
+
+#[test]
 fn tuple_struct_with_pub_field() {
     #[derive(Clone, Hash, PartialEq, Eq, ::facet::Facet)]
     /// This is a struct for sure
